@@ -1,0 +1,81 @@
+{
+  "name": "MoS2 CVD Growth - Standard",
+  "description": "Standard MoS2 monolayer growth on SiO2/Si substrate. Based on Lee et al. method.",
+  "version": 1,
+  "steps": [
+    {
+      "name": "Purge (Ar)",
+      "type": "HOLD",
+      "duration_s": 300,
+      "setpoints": {
+        "furnace.temp": 25,
+        "ar.flow": 200,
+        "h2.flow": 0,
+        "rail.position": 0
+      }
+    },
+    {
+      "name": "Ramp to 300°C",
+      "type": "RAMP",
+      "duration_s": 600,
+      "setpoints": {
+        "furnace.temp": 300,
+        "ar.flow": 100,
+        "h2.flow": 0
+      }
+    },
+    {
+      "name": "Stabilize at 300°C",
+      "type": "HOLD",
+      "duration_s": 300,
+      "setpoints": {
+        "furnace.temp": 300,
+        "ar.flow": 100,
+        "h2.flow": 0
+      }
+    },
+    {
+      "name": "Ramp to growth temp (900°C)",
+      "type": "RAMP",
+      "duration_s": 1800,
+      "setpoints": {
+        "furnace.temp": 900,
+        "ar.flow": 50,
+        "h2.flow": 10
+      }
+    },
+    {
+      "name": "Growth hold",
+      "type": "HOLD",
+      "duration_s": 1800,
+      "setpoints": {
+        "furnace.temp": 900,
+        "ar.flow": 50,
+        "h2.flow": 10,
+        "rail.position": 15000
+      }
+    },
+    {
+      "name": "Cool down ramp",
+      "type": "RAMP",
+      "duration_s": 3600,
+      "setpoints": {
+        "furnace.temp": 100,
+        "ar.flow": 200,
+        "h2.flow": 0,
+        "rail.position": 0
+      }
+    },
+    {
+      "name": "Final purge",
+      "type": "HOLD",
+      "duration_s": 600,
+      "setpoints": {
+        "furnace.temp": 25,
+        "ar.flow": 200,
+        "h2.flow": 0,
+        "rail.position": 0
+      }
+    }
+  ]
+}

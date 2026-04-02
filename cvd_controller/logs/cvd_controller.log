@@ -1,0 +1,30 @@
+2026-03-30 09:58:18,003 [core.devices.manager] INFO: Loaded device: furnace (furnace)
+2026-03-30 09:58:18,004 [core.devices.manager] INFO: Loaded device: ar (mfc)
+2026-03-30 09:58:18,005 [core.devices.manager] INFO: Loaded device: h2 (mfc)
+2026-03-30 09:58:18,006 [core.devices.manager] INFO: Loaded device: rail (rail)
+2026-03-30 09:58:18,035 [core.data_logger] INFO: Database opened: data\cvd_runs.db
+2026-03-30 09:58:32,308 [core.safety] WARNING: SAFETY ALARM [WARNING] RAMP_RATE: Ramp rate 298.4°C/min exceeds limit 50.0°C/min
+2026-03-30 09:58:35,710 [core.recipe_engine] INFO: Recipe loaded: MoS2 CVD Growth - Standard (7 steps)
+2026-03-30 09:58:38,300 [core.safety] INFO: Safety alarm cleared: RAMP_RATE
+2026-03-30 09:58:40,949 [core.data_logger] INFO: Run started: id=1
+2026-03-30 09:58:40,955 [core.recipe_engine] INFO: Step 1/7: Purge (Ar)
+2026-03-30 09:58:42,147 [core.data_logger] WARNING: Log reading error: bad parameter or other API misuse
+2026-03-30 09:58:42,671 [core.data_logger] WARNING: Log reading error: bad parameter or other API misuse
+2026-03-30 09:58:43,183 [core.data_logger] WARNING: Log reading error: bad parameter or other API misuse
+2026-03-30 09:58:43,699 [core.data_logger] WARNING: Log reading error: bad parameter or other API misuse
+2026-03-30 09:58:44,214 [core.data_logger] WARNING: Log reading error: bad parameter or other API misuse
+2026-03-30 09:58:44,312 [core.safety] WARNING: SAFETY ALARM [WARNING] RAMP_RATE: Ramp rate 597.3°C/min exceeds limit 50.0°C/min
+2026-03-30 09:58:44,729 [core.data_logger] WARNING: Log reading error: bad parameter or other API misuse
+2026-03-30 09:58:45,244 [core.data_logger] WARNING: Log reading error: bad parameter or other API misuse
+2026-03-30 09:58:46,280 [core.data_logger] WARNING: Log reading error: bad parameter or other API misuse
+2026-03-30 09:58:46,350 [core.safety] INFO: Safety alarm cleared: RAMP_RATE
+2026-03-30 09:58:46,798 [core.data_logger] WARNING: Log reading error: cannot commit - no transaction is active
+2026-03-30 09:58:48,350 [core.data_logger] WARNING: Log reading error: bad parameter or other API misuse
+2026-03-30 09:58:49,379 [core.data_logger] WARNING: Log reading error: bad parameter or other API misuse
+2026-03-30 09:58:49,894 [core.data_logger] WARNING: Log reading error: bad parameter or other API misuse
+2026-03-30 09:58:50,916 [core.data_logger] WARNING: Log reading error: bad parameter or other API misuse
+2026-03-30 09:59:08,209 [core.recipe_engine] INFO: Recipe paused
+2026-03-30 09:59:11,359 [core.recipe_engine] INFO: Recipe aborted
+2026-03-30 09:59:11,367 [core.data_logger] INFO: Run ended: id=1 status=ABORTED
+2026-03-30 09:59:11,372 [core.safety] CRITICAL: EMERGENCY STOP ACTIVATED
+2026-03-30 09:59:12,365 [core.safety] WARNING: SAFETY ALARM [WARNING] RAMP_RATE: Ramp rate 790.9°C/min exceeds limit 50.0°C/min

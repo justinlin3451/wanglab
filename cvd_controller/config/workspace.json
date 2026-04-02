@@ -1,0 +1,53 @@
+{
+  "workspace": "wanglabCVD",
+  "version": 1,
+  "safety": {
+    "temp_max": 1400.0,
+    "h2_temp_limit": 200.0,
+    "ramp_rate_max_per_min": 50.0
+  },
+  "devices": {
+    "furnace": {
+      "type": "furnace",
+      "port": "COM5",
+      "baud_rate": 9600,
+      "modbus_addr": 1,
+      "max_temp": 1400.0,
+      "simulate": true,
+      "poll_interval_ms": 1000
+    },
+    "ar": {
+      "type": "mfc",
+      "host": "192.168.0.7",
+      "port": 26,
+      "addr": 1,
+      "max_flow": 500.0,
+      "gas": "Ar",
+      "simulate": true,
+      "poll_interval_ms": 500
+    },
+    "h2": {
+      "type": "mfc",
+      "host": "192.168.0.7",
+      "port": 26,
+      "addr": 2,
+      "max_flow": 100.0,
+      "gas": "H2",
+      "simulate": true,
+      "poll_interval_ms": 500
+    },
+    "rail": {
+      "type": "rail",
+      "port": "COM3",
+      "baud_rate": 19200,
+      "addr": "1",
+      "min_pos": 0,
+      "max_pos": 30000,
+      "default_speed": 50,
+      "open_pos": 0,
+      "close_pos": 30000,
+      "simulate": true,
+      "poll_interval_ms": 500
+    }
+  }
+}
