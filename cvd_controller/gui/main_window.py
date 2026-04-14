@@ -86,9 +86,9 @@ class ValueCard(QFrame):
 
 
 # ── Recipe Table ──────────────────────────────────────────────────────────────
-HEADERS = ["#", "Min", "Sec", "Temp °C", "Ar sccm", "H₂ sccm", "Rail pos", "Type", "Notes"]
+HEADERS = ["#", "Min", "Sec", "Temp °C", "Ar sccm", "H₂ sccm", "Motor spd", "Rail pos", "Type", "Notes"]
 CI = {h: i for i, h in enumerate(HEADERS)}
-WIDTHS = [32, 52, 52, 82, 82, 82, 90, 68, 0]
+WIDTHS = [32, 52, 52, 82, 82, 82, 82, 90, 68, 0]
 
 class RecipeTable(QWidget):
     recipe_changed = pyqtSignal(object)
@@ -137,6 +137,7 @@ class RecipeTable(QWidget):
         for i, w in enumerate(WIDTHS):
             if w: self._t.setColumnWidth(i, w)
         hdr.setSectionResizeMode(CI["Notes"], QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(CI["Type"],  QHeaderView.ResizeMode.Fixed)
         hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         self._t.itemChanged.connect(self._changed)
         lay.addWidget(self._t)
@@ -161,8 +162,8 @@ class RecipeTable(QWidget):
         num.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         self._t.setItem(row, 0, num)
 
-        defs = {"Min":"0","Sec":"0","Temp °C":"25","Ar sccm":"0","H₂ sccm":"0","Rail pos":"0","Notes":""}
-        keys = {"Min":"min","Sec":"sec","Temp °C":"temp","Ar sccm":"ar","H₂ sccm":"h2","Rail pos":"rail","Notes":"notes"}
+        defs = {"Min":"0","Sec":"0","Temp °C":"25","Ar sccm":"0","H₂ sccm":"0","Motor spd":"5000","Rail pos":"0","Notes":""}
+        keys = {"Min":"min","Sec":"sec","Temp °C":"temp","Ar sccm":"ar","H₂ sccm":"h2","Motor spd":"motor_speed","Rail pos":"rail","Notes":"notes"}
         for h, k in keys.items():
             val = str(d.get(k, defs[h]))
             item = QTableWidgetItem(val)
@@ -239,7 +240,7 @@ class RecipeTable(QWidget):
                 stype = StepType(combo.currentText() if combo else "HOLD")
                 sp = {}
                 for key, h in [("furnace.temp","Temp °C"),("ar.flow","Ar sccm"),
-                                ("h2.flow","H₂ sccm"),("rail.position","Rail pos")]:
+                                ("h2.flow","H₂ sccm"),("rail.speed","Motor spd"),("rail.position","Rail pos")]:
                     v = self._cell(row, h)
                     if v and v.strip(): sp[key] = float(v)
                 notes = self._cell(row,"Notes") or ""
@@ -276,7 +277,7 @@ class RecipeTable(QWidget):
         r = self._sel(); return (r+1) if r is not None else self._t.rowCount()
 
     def _swap(self, r1, r2):
-        text_headers = ["Min","Sec","Temp °C","Ar sccm","H₂ sccm","Rail pos","Notes"]
+        text_headers = ["Min","Sec","Temp °C","Ar sccm","H₂ sccm","Motor spd","Rail pos","Notes"]
         for h in text_headers:
             t1 = self._cell(r1,h) or ""; t2 = self._cell(r2,h) or ""
             if self._t.item(r1,CI[h]): self._t.item(r1,CI[h]).setText(t2)

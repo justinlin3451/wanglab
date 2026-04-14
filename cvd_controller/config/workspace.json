@@ -9,12 +9,13 @@
   "devices": {
     "furnace": {
       "type": "furnace",
-      "port": "COM5",
-      "baud_rate": 9600,
+      "host": "192.168.0.5",
+      "port": 4196,
       "modbus_addr": 1,
       "max_temp": 1400.0,
       "simulate": true,
-      "poll_interval_ms": 1000
+      "poll_interval_ms": 1000,
+      "notes": "Connects via USR-TCP232-306 serial-to-ethernet adapter. Check IP in adapter config page."
     },
     "ar": {
       "type": "mfc",
@@ -43,11 +44,12 @@
       "addr": "1",
       "min_pos": 0,
       "max_pos": 30000,
-      "default_speed": 50,
+      "default_speed": 5000,
       "open_pos": 0,
-      "close_pos": 30000,
+      "close_pos": 20000,
       "simulate": true,
-      "poll_interval_ms": 500
+      "poll_interval_ms": 500,
+      "notes": "Motor lifts furnace lid via string. open_pos=lid open, close_pos=lid closed. Tune these values."
     }
   }
 }

@@ -1,18 +1,20 @@
 # core/devices/furnace.py
 """
-MTI furnace driver – Modbus RTU over RS-485 serial (COM port).
+MTI furnace driver – Modbus RTU over TCP (via USR-TCP232-306 Serial-to-Ethernet adapter).
 
-Register map (reverse-engineered from Furnace_MTI.py + MTI OTF-1200X manual):
-  Read  PV  : FC03, reg 74, 1 word  (value / 10 = °C)
-  Write SV  : FC06, reg  0, 1 word  (value = °C * 10)
-  Init regs : FC06, reg 81 ← 1000  (ramp rate or PID param)
-               FC06, reg 46 ← 0
-               FC06, reg 27 ← 2    (written twice – control mode)
-               FC06, reg 47 ← 0
+The furnace RS-485 is NOT directly on a COM port. It connects through a
+USR-TCP232-306 serial device server, so we send Modbus RTU frames over
+a raw TCP socket — same bytes, different transport.
+
+Register map:
+  Read  PV : FC03, reg 74, 1 word  → value / 10 = °C
+  Write SV : FC06, reg  0, 1 word  → value = °C * 10
+  Init     : FC06 reg 81←1000, 46←0, 27←2 (×2), 47←0
 """
 
-import serial
+import socket
 import struct
+import threading
 import time
 import logging
 import random
@@ -22,203 +24,128 @@ from .base import DeviceBase, DeviceStatus
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Modbus RTU helpers (minimal, no external library needed)
-# ---------------------------------------------------------------------------
+TCP_TIMEOUT  = 2.0
+RECV_BYTES   = 64
+
+
+# ── Modbus RTU helpers ────────────────────────────────────────────────────────
 
 def _crc16(data: bytes) -> int:
     crc = 0xFFFF
     for byte in data:
         crc ^= byte
         for _ in range(8):
-            if crc & 0x0001:
-                crc = (crc >> 1) ^ 0xA001
-            else:
-                crc >>= 1
+            crc = (crc >> 1) ^ 0xA001 if crc & 1 else crc >> 1
     return crc
 
-
-def _build_fc03(addr: int, reg: int, count: int) -> bytes:
-    """Read holding registers."""
+def _fc03(addr, reg, count):
     pdu = struct.pack(">BBHH", addr, 0x03, reg, count)
-    crc = _crc16(pdu)
-    return pdu + struct.pack("<H", crc)
+    return pdu + struct.pack("<H", _crc16(pdu))
 
-
-def _build_fc06(addr: int, reg: int, value: int) -> bytes:
-    """Write single register."""
+def _fc06(addr, reg, value):
     pdu = struct.pack(">BBHH", addr, 0x06, reg, value)
-    crc = _crc16(pdu)
-    return pdu + struct.pack("<H", crc)
+    return pdu + struct.pack("<H", _crc16(pdu))
+
+def _parse_fc03(data: bytes) -> Optional[list]:
+    if len(data) < 5: return None
+    if _crc16(data[:-2]) != struct.unpack("<H", data[-2:])[0]:
+        logger.warning("Furnace: CRC mismatch"); return None
+    n = data[2] // 2
+    return [struct.unpack(">H", data[3+i*2:5+i*2])[0] for i in range(n)]
 
 
-def _parse_fc03_response(data: bytes) -> Optional[list[int]]:
-    """Parse FC03 response, return list of register values or None on error."""
-    if len(data) < 5:
-        return None
-    # Validate CRC
-    crc_recv = struct.unpack("<H", data[-2:])[0]
-    crc_calc = _crc16(data[:-2])
-    if crc_recv != crc_calc:
-        logger.warning("Furnace: CRC mismatch")
-        return None
-    byte_count = data[2]
-    n_regs = byte_count // 2
-    regs = []
-    for i in range(n_regs):
-        regs.append(struct.unpack(">H", data[3 + i*2 : 5 + i*2])[0])
-    return regs
-
-
-# ---------------------------------------------------------------------------
-# Furnace device
-# ---------------------------------------------------------------------------
+# ── Furnace device ────────────────────────────────────────────────────────────
 
 class FurnaceDevice(DeviceBase):
     """
-    MTI tube furnace controller.
+    MTI tube furnace over TCP (USR-TCP232-306 serial bridge).
 
     Config keys:
-        port          : COM port string, e.g. "COM5"
-        baud_rate     : int, default 9600
-        modbus_addr   : int, default 1
-        max_temp      : float, default 1400.0  (°C)
-        simulate      : bool, default False
+        host             : IP of the USR-TCP232-306, e.g. "192.168.0.5"
+        port             : TCP port, e.g. 4196
+        modbus_addr      : Modbus unit address, default 1
+        max_temp         : hard ceiling °C, default 1400
+        simulate         : bool
         poll_interval_ms : int, default 1000
     """
 
-    TEMP_MAX_DEFAULT = 1400.0
-    READ_TIMEOUT     = 0.5   # seconds
-
-    def __init__(self, device_id: str, config: dict):
+    def __init__(self, device_id, config):
         super().__init__(device_id, config)
-        self.port        = config.get("port", "COM5")
-        self.baud_rate   = int(config.get("baud_rate", 9600))
+        self.host        = config.get("host", "192.168.0.5")
+        self.tcp_port    = int(config.get("port", 4196))
         self.modbus_addr = int(config.get("modbus_addr", 1))
-        self.max_temp    = float(config.get("max_temp", self.TEMP_MAX_DEFAULT))
-        self._serial: Optional[serial.Serial] = None
+        self.max_temp    = float(config.get("max_temp", 1400.0))
+        self._sock: Optional[socket.socket] = None
+        self._lock = threading.Lock()
 
-        # Simulation state
-        self._sim_pv  = 25.0
-        self._sim_sv  = 0.0
-
-    # ------------------------------------------------------------------ #
-    # DeviceBase interface                                                 #
-    # ------------------------------------------------------------------ #
+        # Simulation
+        self._sim_pv = 25.0
+        self._sim_sv = 0.0
 
     def connect(self) -> bool:
         if self.simulate:
             self._set_status(DeviceStatus.SIMULATED)
-            self.start_polling()
-            return True
+            self.start_polling(); return True
         try:
-            self._serial = serial.Serial(
-                port=self.port,
-                baudrate=self.baud_rate,
-                bytesize=8,
-                parity=serial.PARITY_NONE,
-                stopbits=serial.STOPBITS_ONE,
-                timeout=self.READ_TIMEOUT
-            )
-            self._initialize_furnace()
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(TCP_TIMEOUT)
+            s.connect((self.host, self.tcp_port))
+            self._sock = s
+            self._init_furnace()
             self._set_status(DeviceStatus.CONNECTED)
             self.start_polling()
-            logger.info(f"[{self.device_id}] Connected on {self.port}")
+            logger.info(f"[{self.device_id}] Connected to {self.host}:{self.tcp_port}")
             return True
-        except serial.SerialException as e:
-            logger.error(f"[{self.device_id}] Serial connect failed: {e}")
-            self._set_status(DeviceStatus.ERROR)
-            return False
+        except (socket.error, OSError) as e:
+            logger.error(f"[{self.device_id}] TCP connect failed: {e}")
+            self._set_status(DeviceStatus.ERROR); return False
 
     def disconnect(self):
         self.stop_polling()
-        if self._serial and self._serial.is_open:
-            self._serial.close()
+        if self._sock:
+            try: self._sock.close()
+            except: pass
         self._set_status(DeviceStatus.DISCONNECTED)
 
-    def get_value(self, control: str) -> Any:
-        return self._cache.get(control)
+    def get_value(self, control): return self._cache.get(control)
 
-    def set_value(self, control: str, value: Any) -> bool:
-        if control != "temp":
-            logger.warning(f"[{self.device_id}] Unknown control: {control}")
-            return False
-
-        sv = float(value)
-        sv = max(0.0, min(sv, self.max_temp))
-
+    def set_value(self, control, value) -> bool:
+        if control != "temp": return False
+        sv = max(0.0, min(float(value), self.max_temp))
         if self.simulate:
-            self._sim_sv = sv
-            logger.info(f"[{self.device_id}] SIM set temp → {sv:.1f}°C")
-            return True
-
-        sv_int = int(sv * 10)
-        cmd = _build_fc06(self.modbus_addr, 0, sv_int)
-        return self._send_cmd(cmd)
+            self._sim_sv = sv; return True
+        return self._send_recv(_fc06(self.modbus_addr, 0, int(sv * 10))) is not None
 
     def poll(self):
         if self.simulate:
-            self._simulate_step()
-            return
-        # Request PV (process value = actual temperature)
-        cmd = _build_fc03(self.modbus_addr, 74, 1)
-        response = self._send_recv(cmd, expected_bytes=7)
-        if response:
-            regs = _parse_fc03_response(response)
-            if regs:
-                pv = regs[0] / 10.0
-                self._emit_reading("temp", pv, "°C")
+            self._sim_step(); return
+        resp = self._send_recv(_fc03(self.modbus_addr, 74, 1))
+        if resp:
+            regs = _parse_fc03(resp)
+            if regs: self._emit_reading("temp", regs[0] / 10.0, "°C")
 
-    # ------------------------------------------------------------------ #
-    # Internal helpers                                                     #
-    # ------------------------------------------------------------------ #
+    # ── Internal ──────────────────────────────────────────────────────────
 
-    def _initialize_furnace(self):
-        """Send initialization sequence from original driver."""
-        init_cmds = [
-            _build_fc06(self.modbus_addr, 81, 1000),
-            _build_fc06(self.modbus_addr, 46, 0),
-            _build_fc06(self.modbus_addr, 27, 2),
-            _build_fc06(self.modbus_addr, 27, 2),   # sent twice intentionally
-            _build_fc06(self.modbus_addr, 47, 0),
-        ]
-        for cmd in init_cmds:
-            self._send_cmd(cmd)
+    def _init_furnace(self):
+        for reg, val in [(81,1000),(46,0),(27,2),(27,2),(47,0)]:
+            self._send_recv(_fc06(self.modbus_addr, reg, val))
             time.sleep(0.2)
 
-    def _send_cmd(self, cmd: bytes) -> bool:
-        try:
-            self._serial.reset_input_buffer()
-            self._serial.write(cmd)
-            return True
-        except serial.SerialException as e:
-            logger.error(f"[{self.device_id}] Write error: {e}")
-            self._set_status(DeviceStatus.ERROR)
-            return False
-
-    def _send_recv(self, cmd: bytes, expected_bytes: int) -> Optional[bytes]:
-        try:
-            self._serial.reset_input_buffer()
-            self._serial.write(cmd)
-            response = self._serial.read(expected_bytes)
-            if len(response) < expected_bytes:
-                logger.warning(f"[{self.device_id}] Short response: {len(response)}/{expected_bytes}")
+    def _send_recv(self, cmd: bytes) -> Optional[bytes]:
+        with self._lock:
+            try:
+                self._sock.sendall(cmd)
+                return self._sock.recv(RECV_BYTES)
+            except socket.timeout:
+                logger.warning(f"[{self.device_id}] Timeout")
                 return None
-            return response
-        except serial.SerialException as e:
-            logger.error(f"[{self.device_id}] Read error: {e}")
-            self._set_status(DeviceStatus.ERROR)
-            return None
+            except socket.error as e:
+                logger.error(f"[{self.device_id}] Socket error: {e}")
+                self._set_status(DeviceStatus.ERROR)
+                return None
 
-    def _simulate_step(self):
-        """Slowly ramp simulated PV toward SV."""
+    def _sim_step(self):
         dt = self._poll_interval
-        ramp_rate = 10.0   # °C/s in simulation
         diff = self._sim_sv - self._sim_pv
-        if abs(diff) < 0.5:
-            self._sim_pv = self._sim_sv
-        else:
-            self._sim_pv += ramp_rate * dt * (1 if diff > 0 else -1)
-        # Add tiny noise
-        pv = self._sim_pv + random.uniform(-0.2, 0.2)
-        self._emit_reading("temp", round(pv, 1), "°C")
+        self._sim_pv += min(abs(diff), 10.0 * dt) * (1 if diff >= 0 else -1)
+        self._emit_reading("temp", round(self._sim_pv + random.uniform(-0.1,0.1), 1), "°C")
